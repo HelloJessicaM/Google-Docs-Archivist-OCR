@@ -80,20 +80,19 @@ function processImagesWithGemini(folderId) {
   
   runBatchProcessing(folderId, modelName);
 }
-
 function runBatchProcessing(folderId, modelName) {
   const sourceFolder = DriveApp.getFolderById(folderId);
   const filesIterator = sourceFolder.getFilesByType(MimeType.JPEG);
   var doc = DocumentApp.getActiveDocument();
   var body = doc.getBody();
 
-  // --- NEW STEP: COLLECT AND SORT ---
+  // 1. COLLECT AND SORT FILES
   var fileArray = [];
   while (filesIterator.hasNext()) {
     fileArray.push(filesIterator.next());
   }
 
-  // Sort files alphabetically by name (A-Z)
+  // Sort A-Z
   fileArray.sort(function(a, b) {
     var nameA = a.getName().toLowerCase();
     var nameB = b.getName().toLowerCase();
@@ -106,12 +105,25 @@ function runBatchProcessing(folderId, modelName) {
      DocumentApp.getUi().alert("No JPEG files found in that folder!");
      return;
   }
-  // ----------------------------------
 
-  // Iterate through the SORTED array
+  // 2. CHECK EXISTING PROGRESS
+  // We grab all the text currently in the doc so we know what to skip.
+  const existingText = body.getText();
+
+  // 3. PROCESS LOOP
   for (var i = 0; i < fileArray.length; i++) {
     const file = fileArray[i];
     const fileName = file.getName();
+
+    // --- THE SKIP LOGIC ---
+    // If the filename is already in the doc, skip it!
+    if (existingText.includes("FILE: " + fileName)) {
+      console.log(`Skipping ${fileName} (Already processed)`);
+      continue; // Jumps to the next iteration of the loop
+    }
+
+    // If we are here, the file is new. Let's process it.
+    console.log(`Processing: ${fileName}`);
     
     try {
       const imageBlob = file.getBlob();
@@ -148,7 +160,7 @@ function runBatchProcessing(folderId, modelName) {
         body.appendHorizontalRule();
         body.appendPageBreak();
         
-        // Save progress
+        // Save progress to drive so we don't lose it if we crash
         doc.saveAndClose();
         doc = DocumentApp.getActiveDocument();
         body = doc.getBody();
@@ -161,7 +173,10 @@ function runBatchProcessing(folderId, modelName) {
       console.log(`Failed ${fileName}: ${e.message}`);
     }
 
-    Utilities.sleep(2000); 
+    // 4. SPEED ADJUSTMENT
+    // I reduced this to 1000 (1 second). 
+    // This makes it faster, but still polite to the API.
+    Utilities.sleep(1000); 
   }
   
   DocumentApp.getUi().alert('✅ OCR Complete!');
