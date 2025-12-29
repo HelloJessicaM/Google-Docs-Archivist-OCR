@@ -22,3 +22,18 @@ A simple Google Apps Script that connects Google Drive + Google Docs + Gemini AI
 2.  Click **Run Image-to-Text OCR**.
 3.  Paste the link to your Google Drive folder containing images.
 4.  Watch the text appear!
+
+## Best Practices & Troubleshooting
+
+### 1. Naming Your Files
+The script processes images in **alphabetical order (A-Z)** based on the filename. To ensure your pages appear in the correct order in the Google Doc, use sequential numbering with leading zeros:
+* ✅ `Scan_001.jpg`, `Scan_002.jpg`, `Scan_010.jpg`
+* ❌ `Page1.jpg`, `Page10.jpg`, `Page2.jpg` (Computer sorting will often put Page 10 before Page 2)
+
+### 2. Handling Timeouts ("Exceeds maximum execution time")
+Google Apps Script has a strict time limit (6 minutes for free accounts). If you are processing a large folder, the script **will** stop before finishing. This is normal.
+
+**How to fix it:**
+1.  Simply click **Run** again.
+2.  The script has **"Smart Resume"** logic: it looks at your Google Doc, sees which files are already finished, and automatically skips them.
+3.  Repeat this process until you see the `✅ OCR Complete!` message.
