@@ -1,0 +1,169 @@
+/**
+ * ARCHIVIST TOOLS - AI OCR
+ * ------------------------
+ * This script connects a Google Doc to Google Drive and Gemini AI.
+ * It reads images from a user-specified folder, performs OCR, and
+ * outputs formatted text into the current document.
+ */
+
+// --- CONFIGURATION ---
+// KEEP THIS EMPTY WHEN UPLOADING TO GITHUB
+// Users should paste their own key here locally.
+const API_KEY = 'PASTE_YOUR_API_KEY_HERE'; 
+
+function onOpen() {
+  DocumentApp.getUi()
+      .createMenu('🌟 Archivist Tools')
+      .addItem('Run Image-to-Text OCR', 'promptForFolder')
+      .addToUi();
+}
+
+/**
+ * Step 1: Ask the user for the Google Drive Folder URL
+ */
+function promptForFolder() {
+  const ui = DocumentApp.getUi();
+  const response = ui.prompt(
+    'Source Images',
+    'Please paste the link (URL) to the Google Drive folder containing your JPEGs:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() == ui.Button.OK) {
+    const url = response.getResponseText();
+    const folderId = extractFolderId(url);
+    
+    if (folderId) {
+      processImagesWithGemini(folderId);
+    } else {
+      ui.alert('Error: Could not find a valid Folder ID in that link.');
+    }
+  }
+}
+
+/**
+ * Step 2: The Main Processing Engine
+ */
+function processImagesWithGemini(folderId) {
+  const doc = DocumentApp.getActiveDocument(); // Uses the currently open doc!
+  const body = doc.getBody();
+  
+  // 1. Validate Folder
+  let sourceFolder;
+  try {
+    sourceFolder = DriveApp.getFolderById(folderId);
+  } catch (e) {
+    DocumentApp.getUi().alert("Error: Access denied or folder not found. Check permissions.");
+    return;
+  }
+
+  const files = sourceFolder.getFilesByType(MimeType.JPEG);
+
+  // 2. Auto-Detect Model
+  const modelName = getBestAvailableModel(API_KEY);
+  if (!modelName) {
+    body.appendParagraph("Error: Could not connect to Gemini API. Check your API Key.");
+    return;
+  }
+
+  // 3. Loop through files
+  if (!files.hasNext()) {
+    DocumentApp.getUi().alert("No JPEG files found in that folder!");
+    return;
+  }
+
+  // Notify user it's starting
+  doc.saveAndClose(); // Save current state before heavy lifting
+  
+  // We need to re-open purely for the loop logic to work safely with UI updates
+  // Note: We can't use 'ui.alert' inside the loop easily without pausing script
+  
+  runBatchProcessing(folderId, modelName);
+}
+
+function runBatchProcessing(folderId, modelName) {
+  const sourceFolder = DriveApp.getFolderById(folderId);
+  const files = sourceFolder.getFilesByType(MimeType.JPEG);
+  var doc = DocumentApp.getActiveDocument();
+  var body = doc.getBody();
+
+  while (files.hasNext()) {
+    const file = files.next();
+    const fileName = file.getName();
+    
+    try {
+      const imageBlob = file.getBlob();
+      const base64Image = Utilities.base64Encode(imageBlob.getBytes());
+
+      const payload = {
+        "contents": [{
+          "parts": [
+            { "text": "Transcribe the text in this image perfectly. If the image contains a list or columnar data, format it as a clean Markdown table. If it is an article, preserve the headings. Do not include your own commentary." },
+            { "inline_data": { "mime_type": "image/jpeg", "data": base64Image }}
+          ]
+        }]
+      };
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${API_KEY}`;
+      const options = {
+        'method': 'post',
+        'contentType': 'application/json',
+        'payload': JSON.stringify(payload),
+        'muteHttpExceptions': true
+      };
+
+      const response = UrlFetchApp.fetch(url, options);
+      const json = JSON.parse(response.getContentText());
+
+      if (json.candidates && json.candidates[0].content) {
+        const aiText = json.candidates[0].content.parts[0].text;
+        
+        // Output Style
+        var headerPara = body.appendParagraph("FILE: " + fileName);
+        headerPara.setBold(true).setFontSize(14);
+        
+        body.appendParagraph(aiText);
+        body.appendHorizontalRule();
+        body.appendPageBreak();
+        
+        // Save progress
+        doc.saveAndClose();
+        doc = DocumentApp.getActiveDocument();
+        body = doc.getBody();
+        
+      } else {
+        console.log(`Error on ${fileName}: ${JSON.stringify(json)}`);
+      }
+
+    } catch (e) {
+      console.log(`Failed ${fileName}: ${e.message}`);
+    }
+
+    Utilities.sleep(2000); 
+  }
+  
+  DocumentApp.getUi().alert('✅ OCR Complete!');
+}
+
+// UTILITIES
+function extractFolderId(url) {
+  // Handles standard drive URLs
+  const match = url.match(/[-\w]{25,}/); 
+  return match ? match[0] : null;
+}
+
+function getBestAvailableModel(apiKey) {
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+    const response = UrlFetchApp.fetch(url);
+    const json = JSON.parse(response.getContentText());
+    if (!json.models) return null;
+    const flashModels = json.models.filter(m => 
+      m.name.toLowerCase().includes("flash") && 
+      m.supportedGenerationMethods.includes("generateContent")
+    );
+    return flashModels.length > 0 ? flashModels[0].name : json.models[0].name;
+  } catch (e) {
+    return "models/gemini-2.5-flash"; 
+  }
+}
