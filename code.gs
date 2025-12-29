@@ -83,12 +83,34 @@ function processImagesWithGemini(folderId) {
 
 function runBatchProcessing(folderId, modelName) {
   const sourceFolder = DriveApp.getFolderById(folderId);
-  const files = sourceFolder.getFilesByType(MimeType.JPEG);
+  const filesIterator = sourceFolder.getFilesByType(MimeType.JPEG);
   var doc = DocumentApp.getActiveDocument();
   var body = doc.getBody();
 
-  while (files.hasNext()) {
-    const file = files.next();
+  // --- NEW STEP: COLLECT AND SORT ---
+  var fileArray = [];
+  while (filesIterator.hasNext()) {
+    fileArray.push(filesIterator.next());
+  }
+
+  // Sort files alphabetically by name (A-Z)
+  fileArray.sort(function(a, b) {
+    var nameA = a.getName().toLowerCase();
+    var nameB = b.getName().toLowerCase();
+    if (nameA < nameB) return -1;
+    if (nameA > nameB) return 1;
+    return 0;
+  });
+
+  if (fileArray.length === 0) {
+     DocumentApp.getUi().alert("No JPEG files found in that folder!");
+     return;
+  }
+  // ----------------------------------
+
+  // Iterate through the SORTED array
+  for (var i = 0; i < fileArray.length; i++) {
+    const file = fileArray[i];
     const fileName = file.getName();
     
     try {
