@@ -32,9 +32,18 @@ function processImagesWithGemini() {
   // Sorts numerically (1, 2, 10)
   fileArray.sort((a, b) => a.getName().localeCompare(b.getName(), undefined, {numeric: true, sensitivity: 'base'}));
 
-  // 3. Process Loop
+  // 3. PROCESS LOOP
+  const existingText = body.getText(); // Read the doc once at the start
+
   for (const file of fileArray) {
     const fileName = file.getName();
+    
+    // CHECKPOINT: If "FILE: imageName.jpg" is already in the doc, skip it!
+    if (existingText.includes("FILE: " + fileName)) {
+      Logger.log(`Skipping ${fileName} (Already in Document)`);
+      continue; 
+    }
+
     Logger.log(`Processing file: ${fileName}`);
 
     try {
@@ -65,14 +74,13 @@ function processImagesWithGemini() {
         const aiText = json.candidates[0].content.parts[0].text;
         
         var headerPara = body.appendParagraph("FILE: " + fileName);
-        headerPara.setBold(true);
-        headerPara.setFontSize(14); 
+        headerPara.setBold(true).setFontSize(14).setForegroundColor('#38761d'); 
 
         body.appendParagraph(aiText);
         body.appendHorizontalRule(); 
         body.appendPageBreak();
 
-        // Save progress to the Doc
+        // Critical for Checkpointing: Save after every successful image
         doc.saveAndClose();
         doc = DocumentApp.openById(OUTPUT_DOC_ID);
         body = doc.getBody();
@@ -85,7 +93,8 @@ function processImagesWithGemini() {
       Logger.log(`FAILED: ${fileName}. Error: ${e.message}`);
     }
     
-    Utilities.sleep(2000); // Wait 2 seconds between images
+    // Safety delay for API limits
+    Utilities.sleep(2000); 
   }
 
   Logger.log("Script Finished.");
